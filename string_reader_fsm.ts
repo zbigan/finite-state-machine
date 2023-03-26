@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+
+
 type State =
   | 'look_for_string'
   | 'in_string'
@@ -38,8 +42,6 @@ class FSM {
   }
 }
 
-const input = ["1", '"', "a", "c", "d", "e", "f", '"']
-
 const transitionTable: TransitionsTable = {
   'look_for_string': {
     '"': ['in_string', 'start_new_string'],
@@ -57,29 +59,38 @@ const transitionTable: TransitionsTable = {
 
 const readerFsm = new FSM(transitionTable, 'look_for_string')
 
-let result: string[] = []
-
-while (input.length) {
-  const char = input.shift()!
-  const action = readerFsm.accept(char)
-
-  switch (action) {
-    case 'ignore': {
-      break
-    }
-    case 'start_new_string': {
-      result = []
-      break
-    }
-    case 'add_current_to_string': {
-      result.push(char)
-      break
-    }
-    case 'finish_current_string': {
-      console.log(result.join(''))
-      break
-    }
-    default:
-      break
-  }
+if (process.argv.length < 3) {
+  console.log('Usage: node ' + process.argv[1] + ' FILENAME');
+  process.exit(1);
 }
+
+const filename = process.argv[2]
+
+await pipeline(
+  fs.readFileSync(filename, { encoding: 'utf8' }),
+  async function* processChunks(readable) {
+    for await (const chunk of readable) {
+      const action = readerFsm.accept(chunk)
+      
+      switch (action) {
+        case 'ignore': {
+          break
+        }
+        case 'start_new_string': {
+          break
+        }
+        case 'add_current_to_string': {
+          yield chunk
+          break
+        }
+        case 'finish_current_string': {
+          console.log('finished string!')
+          break
+        }
+        default:
+          break
+      }
+    }
+  },
+  fs.createWriteStream('output.txt')
+)
